@@ -11,7 +11,7 @@ import time
 
 # --- 1. CLOUD-SICHERE DATENABFRAGE (CACHING) ---
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=3600)  # Suchergebnisse für 1 Stunde im Cache
 def finde_ticker_liste(suchbegriff):
     if not suchbegriff: return []
     url = f"https://query2.finance.yahoo.com/v1/finance/search?q={requests.utils.quote(suchbegriff)}"
@@ -30,7 +30,7 @@ def finde_ticker_liste(suchbegriff):
         return ergebnisse
     except: return []
 
-@st.cache_data(ttl=900, show_spinner=False)
+@st.cache_data(ttl=900, show_spinner=False)  # Kurse für 15 Minuten speichern (900 Sekunden)
 def get_cached_history(ticker, period, interval):
     try:
         df = yf.Ticker(ticker).history(period=period, interval=interval)
@@ -38,14 +38,14 @@ def get_cached_history(ticker, period, interval):
     except:
         return pd.DataFrame()
 
-@st.cache_data(ttl=86400, show_spinner=False)
+@st.cache_data(ttl=86400, show_spinner=False)  # Stammdaten (Sektor etc.) für 24h speichern!
 def get_cached_info(ticker):
     try:
         return yf.Ticker(ticker).info
     except:
         return {}
 
-@st.cache_data(ttl=86400, show_spinner=False)
+@st.cache_data(ttl=86400, show_spinner=False)  # Dividenden für 24h speichern!
 def get_cached_dividends(ticker):
     try:
         return yf.Ticker(ticker).dividends
@@ -97,6 +97,7 @@ def convert_df_to_csv(df):
 
 st.set_page_config(page_title="Aktienanalyse Pro", layout="wide")
 
+# --- NEUER CSS FIX: BÜNDIG, KLEINERE SCHRIFT, SILBENTRENNUNG ---
 st.markdown("""
     <style>
         .block-container {
@@ -104,6 +105,32 @@ st.markdown("""
             padding-bottom: 2rem !important;
             padding-left: 1rem !important;
             padding-right: 1rem !important;
+        }
+        [data-testid="stTable"] table {
+            width: 100% !important;
+            table-layout: fixed !important;
+        }
+        [data-testid="stTable"] th, [data-testid="stTable"] td {
+            text-align: center !important;
+            font-size: 0.85em !important;
+            padding: 8px 4px !important;
+            white-space: normal !important;
+        }
+        /* Spalte 1 (Name): Mehr Platz, minimal kleinere Schrift, schöne Silbentrennung */
+        [data-testid="stTable"] th:nth-child(1), [data-testid="stTable"] td:nth-child(1) {
+            width: 25% !important; 
+            text-align: left !important;
+            font-size: 0.80em !important;
+            word-break: normal !important;
+            overflow-wrap: break-word !important;
+            -webkit-hyphens: auto;
+            -moz-hyphens: auto;
+            hyphens: auto;
+        }
+        /* Die letzten beiden Spalten (Empfehlung & Signal) etwas breiter, da Text dort länger sein kann */
+        [data-testid="stTable"] th:nth-last-child(1), [data-testid="stTable"] td:nth-last-child(1),
+        [data-testid="stTable"] th:nth-last-child(2), [data-testid="stTable"] td:nth-last-child(2) {
+            width: 11% !important; 
         }
     </style>
 """, unsafe_allow_html=True)
@@ -163,7 +190,8 @@ if query:
     
     st.sidebar.markdown("---")
     st.sidebar.subheader("Darstellung")
-    show_candles = st.sidebar.checkbox("Candlesticks anzeigen", value=True)
+    # Hier wurde "value" auf False gesetzt!
+    show_candles = st.sidebar.checkbox("Candlesticks anzeigen", value=False)
     show_line = st.sidebar.checkbox("Linien-Chart anzeigen", value=True)
     
     st.sidebar.subheader("Backtest Parameter")
@@ -281,8 +309,6 @@ if query:
             fig.add_trace(go.Scatter(x=df.index, y=df['MACD'], line=dict(color='#00BFFF', width=1.5), name="MACD"), row=4, col=1)
             fig.add_trace(go.Scatter(x=df.index, y=df['MACD_Signal'], line=dict(color='#ff9900', width=1.5), name="Signal"), row=4, col=1)
 
-            # --- FIX: SCROLLEN AUF DEM HANDY ERLAUBEN ---
-            # fixedrange=True verhindert das Zoomen der Achsen
             fig.update_xaxes(showgrid=True, gridcolor='rgba(255,255,255,0.05)', rangeslider_visible=False, fixedrange=True)
             fig.update_yaxes(fixedrange=True)
             
@@ -293,7 +319,7 @@ if query:
                 showlegend=True, 
                 hovermode="x unified",
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                dragmode=False  # Verhindert das Aufziehen von Rechtecken zum Zoomen!
+                dragmode=False
             )
             st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
