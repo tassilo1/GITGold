@@ -4,9 +4,18 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import requests
+from requests import Session
 import os
 import json
 import concurrent.futures
+import time
+
+# --- 0. CLOUD-SETUP FÜR YAHOO FINANCE ---
+# Das verhindert, dass Yahoo Finance die Streamlit-Cloud blockiert
+yf_session = Session()
+yf_session.headers.update({
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+})
 
 # --- 1. HILFSFUNKTIONEN (JSON-BASIERT) ---
 
@@ -14,9 +23,8 @@ import concurrent.futures
 def finde_ticker_liste(suchbegriff):
     if not suchbegriff: return []
     url = f"https://query2.finance.yahoo.com/v1/finance/search?q={requests.utils.quote(suchbegriff)}"
-    headers = {'User-Agent': 'Mozilla/5.0'} 
     try:
-        response = requests.get(url, headers=headers, timeout=5).json()
+        response = yf_session.get(url, timeout=5).json()
         ergebnisse = []
         if 'quotes' in response:
             for t in response['quotes']:
@@ -129,7 +137,7 @@ else:
             if st.sidebar.button("💾 Speichern"): 
                 with st.spinner("Speichere Asset..."):
                     try:
-                        info_data = yf.Ticker(query).info
+                        info_data = yf.Ticker(query, session=yf_session).info
                         sec = info_data.get('sector', info_data.get('category', 'Unbekannt'))
                         ctry = info_data.get('country', 'Unbekannt')
                     except:
@@ -168,7 +176,7 @@ if query:
     block_breite = st.sidebar.slider(f"Zonen Breite ({cfg['unit']})", 1, 20, 5)
 
     with st.spinner('Lade Kursdaten...'):
-        aktie = yf.Ticker(query)
+        aktie = yf.Ticker(query, session=yf_session)
         df_full = aktie.history(period=cfg['buf'], interval=cfg['int'])
         df_crop = aktie.history(period=zeitraum, interval=cfg['int'])
 
@@ -308,7 +316,8 @@ if query:
                     p_sector = p_data.get("sector", "Unbekannt")
                     p_country = p_data.get("country", "Unbekannt")
                     
-                    p_ticker_obj = yf.Ticker(p_ticker)
+                    # WICHTIG: Session übergeben!
+                    p_ticker_obj = yf.Ticker(p_ticker, session=yf_session)
                     
                     # --- BESSERE ERKENNUNG VON ETFs vs. AKTIEN ---
                     try:
@@ -324,7 +333,6 @@ if query:
                     # ---------------------------------------------
                     
                     # --- DYNAMISCHER LÄNDER- & SEKTOR-FIX ---
-                    # Versuche die Daten live neu zu laden, falls sie in der JSON fehlen
                     if p_sector == "Unbekannt" or p_country == "Unbekannt" or not p_sector or not p_country:
                         try:
                             info = p_ticker_obj.info
@@ -335,7 +343,6 @@ if query:
                         except:
                             pass
                             
-                    # Wenn es ein ETF ist und Yahoo Finance immer noch nichts liefert, machen wir es hübsch:
                     if asset_type == "ETF":
                         if p_sector == "Unbekannt" or not p_sector:
                             p_sector = "Diversifiziert (ETF)"
@@ -457,7 +464,8 @@ if query:
                     }
                     return result_dict, p_wert, expected_div_abs
 
-                with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+                # REDUZIERTE WORKER FÜR DIE CLOUD
+                with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
                     futures = {executor.submit(process_portfolio_item, name, data): name for name, data in portfolio.items()}
                     
                     completed = 0
@@ -474,6 +482,7 @@ if query:
                         finally:
                             completed += 1
                             prog_bar.progress(completed / items_len)
+                            time.sleep(0.1) # Kurze Pause, um Yahoo nicht zu überlasten
                 
                 prog_bar.empty()
                 
@@ -481,7 +490,6 @@ if query:
                     res_df = pd.DataFrame(signal_data)
                     res_df = res_df.sort_values(by="Trefferquote", ascending=False).reset_index(drop=True)
                     
-                    # Split in Portfolio und Watchlist anhand der Menge
                     df_portfolio = res_df[res_df["Menge"] > 0]
                     df_watchlist = res_df[res_df["Menge"] == 0]
                     
@@ -522,7 +530,7 @@ if query:
                         if df_subset.empty: return
                         cols_to_drop = ["Trefferquote", "AssetType", "DistType", "Sector", "Country"]
                         if is_watchlist:
-                            cols_to_drop.append("Wert")  # In der Watchlist brauchen wir den Wert nicht
+                            cols_to_drop.append("Wert")
                             
                         df_show = df_subset.drop(columns=cols_to_drop, errors='ignore')
                         
