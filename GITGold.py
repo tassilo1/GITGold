@@ -9,13 +9,14 @@ import json
 import concurrent.futures
 import time
 
-# --- 1. HILFSFUNKTIONEN (JSON-BASIERT) ---
+# --- 1. CLOUD-SICHERE DATENABFRAGE (CACHING) ---
+# Das ist der wichtigste Teil gegen die Yahoo-Blockaden!
 
-@st.cache_data(ttl=3600)  # Suchergebnisse für 1 Stunde im Cache behalten
+@st.cache_data(ttl=3600)  # Suchergebnisse für 1 Stunde im Cache
 def finde_ticker_liste(suchbegriff):
     if not suchbegriff: return []
     url = f"https://query2.finance.yahoo.com/v1/finance/search?q={requests.utils.quote(suchbegriff)}"
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0'} 
+    headers = {'User-Agent': 'Mozilla/5.0'} 
     try:
         response = requests.get(url, headers=headers, timeout=5).json()
         ergebnisse = []
@@ -25,18 +26,34 @@ def finde_ticker_liste(suchbegriff):
                     name = t.get('shortname') or t.get('longname') or 'Unbekannt'
                     exch = t.get('exchDisp') or t.get('exchange') or 'Unbekannt'
                     curr = t.get('currency', '')
-                    
                     curr_map = {"EUR": "€", "USD": "$", "GBP": "£", "CHF": "CHF", "CAD": "CAD"}
-                    curr_sym = curr_map.get(curr, curr)
-                    
-                    ergebnisse.append({
-                        'symbol': t['symbol'], 
-                        'name': name, 
-                        'exchange': exch,
-                        'currency': curr_sym
-                    })
+                    ergebnisse.append({'symbol': t['symbol'], 'name': name, 'exchange': exch, 'currency': curr_map.get(curr, curr)})
         return ergebnisse
     except: return []
+
+@st.cache_data(ttl=900, show_spinner=False)  # Kurse für 15 Minuten speichern (900 Sekunden)
+def get_cached_history(ticker, period, interval):
+    try:
+        df = yf.Ticker(ticker).history(period=period, interval=interval)
+        return df
+    except:
+        return pd.DataFrame()
+
+@st.cache_data(ttl=86400, show_spinner=False)  # Stammdaten (Sektor etc.) für 24h speichern!
+def get_cached_info(ticker):
+    try:
+        return yf.Ticker(ticker).info
+    except:
+        return {}
+
+@st.cache_data(ttl=86400, show_spinner=False)  # Dividenden für 24h speichern!
+def get_cached_dividends(ticker):
+    try:
+        return yf.Ticker(ticker).dividends
+    except:
+        return pd.Series()
+
+# --- 2. HILFSFUNKTIONEN (JSON-BASIERT) ---
 
 def lade_portfolio():
     if os.path.exists("meine_aktien.json"):
@@ -44,45 +61,40 @@ def lade_portfolio():
             with open("meine_aktien.json", "r", encoding="utf-8") as f:
                 data = json.load(f)
                 for k, v in data.items():
-                    if isinstance(v, str):
-                        data[k] = {"ticker": v, "menge": 0.0, "sector": "Unbekannt", "country": "Unbekannt", "currency": ""}
+                    if isinstance(v, str): data[k] = {"ticker": v, "menge": 0.0, "sector": "Unbekannt", "country": "Unbekannt", "currency": ""}
                     else:
                         if "sector" not in v: v["sector"] = "Unbekannt"
                         if "country" not in v: v["country"] = "Unbekannt"
                         if "currency" not in v: v["currency"] = ""
                 return data
-        except:
-            return {}
+        except: return {}
     return {}
 
 def speichere_in_portfolio(name, ticker, menge=0.0, sector="Unbekannt", country="Unbekannt", currency=""):
     p = lade_portfolio()
     p[name] = {"ticker": ticker, "menge": menge, "sector": sector, "country": country, "currency": currency}
-    with open("meine_aktien.json", "w", encoding="utf-8") as f:
-        json.dump(p, f, ensure_ascii=False, indent=4)
+    with open("meine_aktien.json", "w", encoding="utf-8") as f: json.dump(p, f, ensure_ascii=False, indent=4)
     st.rerun()
 
 def aktualisiere_menge(name, neue_menge):
     p = lade_portfolio()
     if name in p:
         p[name]["menge"] = neue_menge
-        with open("meine_aktien.json", "w", encoding="utf-8") as f:
-            json.dump(p, f, ensure_ascii=False, indent=4)
+        with open("meine_aktien.json", "w", encoding="utf-8") as f: json.dump(p, f, ensure_ascii=False, indent=4)
     st.rerun()
 
 def entferne_aus_portfolio(name):
     p = lade_portfolio()
     if name in p:
         del p[name]
-        with open("meine_aktien.json", "w", encoding="utf-8") as f:
-            json.dump(p, f, ensure_ascii=False, indent=4)
+        with open("meine_aktien.json", "w", encoding="utf-8") as f: json.dump(p, f, ensure_ascii=False, indent=4)
     st.rerun()
 
 @st.cache_data
 def convert_df_to_csv(df):
     return df.to_csv(index=False).encode('utf-8')
 
-# --- 2. SETUP & SIDEBAR ---
+# --- 3. SETUP & SIDEBAR ---
 
 st.set_page_config(page_title="Aktienanalyse Pro", layout="wide")
 st.title("📈 Professionelles Analyse-Dashboard")
@@ -91,7 +103,7 @@ portfolio = lade_portfolio()
 st.sidebar.header("⚙️ Steuerung")
 modus = st.sidebar.radio("Modus:", ["Mein Portfolio / Watchlist", "Neue Suche"])
 query, display_name = "", ""
-asset_currency_sym = "" # Globale Initialisierung
+asset_currency_sym = "" 
 
 if modus == "Mein Portfolio / Watchlist":
     if portfolio:
@@ -102,9 +114,7 @@ if modus == "Mein Portfolio / Watchlist":
         
         st.sidebar.markdown("---")
         neue_menge = st.sidebar.number_input("Anzahl im Depot (0 = Watchlist):", min_value=0.0, value=float(akt_menge), step=1.0)
-        if st.sidebar.button("💾 Anzahl speichern"):
-            aktualisiere_menge(display_name, neue_menge)
-            
+        if st.sidebar.button("💾 Anzahl speichern"): aktualisiere_menge(display_name, neue_menge)
         st.sidebar.markdown("---")
         if st.sidebar.button("🗑️ Aus Liste löschen"): entferne_aus_portfolio(display_name)
     else:
@@ -116,7 +126,6 @@ else:
         if treffer:
             optionen = [f"{t['name']} ({t['symbol']}) | 🏛️ {t['exchange']} | 🪙 {t['currency']}" for t in treffer]
             auswahl = st.sidebar.selectbox("Börsenplatz auswählen:", optionen)
-            
             selected_ticker = next(t for t in treffer if f"{t['name']} ({t['symbol']}) | 🏛️ {t['exchange']} | 🪙 {t['currency']}" == auswahl)
             
             query = selected_ticker['symbol']
@@ -129,18 +138,14 @@ else:
             
             if st.sidebar.button("💾 Speichern"): 
                 with st.spinner("Speichere Asset..."):
-                    try:
-                        info_data = yf.Ticker(query).info
-                        sec = info_data.get('sector', info_data.get('category', 'Unbekannt'))
-                        ctry = info_data.get('country', 'Unbekannt')
-                    except:
-                        sec = "Unbekannt"
-                        ctry = "Unbekannt"
+                    info_data = get_cached_info(query)
+                    sec = info_data.get('sector', info_data.get('category', 'Unbekannt'))
+                    ctry = info_data.get('country', 'Unbekannt')
                 speichere_in_portfolio(wn, query, start_menge, sec, ctry, asset_currency_sym)
         else:
             st.sidebar.warning("Keine Ergebnisse gefunden.")
 
-# --- 3. DYNAMISCHE LOGIK & ANALYSE ---
+# --- 4. DYNAMISCHE LOGIK & ANALYSE ---
 
 if query:
     zeitraum = st.sidebar.selectbox("Zeitraum:", ["1d", "5d", "1mo", "3mo", "6mo", "1y", "5y", "max"], index=2)
@@ -154,14 +159,10 @@ if query:
     tage_backtest = st.sidebar.number_input("Erfolg nach X Tagen prüfen:", min_value=1, max_value=30, value=7)
     
     logic = {
-        "1d":  {"int": "5m",  "unit": "Minuten", "buf": "5d"},
-        "5d":  {"int": "60m", "unit": "Stunden", "buf": "1mo"},
-        "1mo": {"int": "1d",  "unit": "Tage",    "buf": "3mo"},
-        "3mo": {"int": "1d",  "unit": "Tage",    "buf": "6mo"},
-        "6mo": {"int": "1d",  "unit": "Tage",    "buf": "1y"},
-        "1y":  {"int": "1d",  "unit": "Tage",    "buf": "2y"},
-        "5y":  {"int": "1d",  "unit": "Tage",    "buf": "max"},
-        "max": {"int": "1d",  "unit": "Tage",    "buf": "max"}
+        "1d":  {"int": "5m",  "unit": "Minuten", "buf": "5d"}, "5d":  {"int": "60m", "unit": "Stunden", "buf": "1mo"},
+        "1mo": {"int": "1d",  "unit": "Tage",    "buf": "3mo"}, "3mo": {"int": "1d",  "unit": "Tage",    "buf": "6mo"},
+        "6mo": {"int": "1d",  "unit": "Tage",    "buf": "1y"}, "1y":  {"int": "1d",  "unit": "Tage",    "buf": "2y"},
+        "5y":  {"int": "1d",  "unit": "Tage",    "buf": "max"}, "max": {"int": "1d",  "unit": "Tage",    "buf": "max"}
     }
     
     cfg = logic.get(zeitraum)
@@ -169,9 +170,8 @@ if query:
     block_breite = st.sidebar.slider(f"Zonen Breite ({cfg['unit']})", 1, 20, 5)
 
     with st.spinner('Lade Kursdaten...'):
-        aktie = yf.Ticker(query)
-        df_full = aktie.history(period=cfg['buf'], interval=cfg['int'])
-        df_crop = aktie.history(period=zeitraum, interval=cfg['int'])
+        df_full = get_cached_history(query, cfg['buf'], cfg['int'])
+        df_crop = get_cached_history(query, zeitraum, cfg['int'])
 
     if not df_full.empty: df_full = df_full[~df_full.index.duplicated(keep='first')]
     if not df_crop.empty: df_crop = df_crop[~df_crop.index.duplicated(keep='first')]
@@ -180,19 +180,17 @@ if query:
         st.warning(f"⚠️ Yahoo Finance liefert aktuell keine historischen Kursdaten für das Symbol '{query}'.")
     else:
         try:
-            # Berechnungen Bollinger
+            # Berechnungen
             df_full['SMA'] = df_full['Close'].rolling(window=bb_fenster).mean()
             df_full['STD'] = df_full['Close'].rolling(window=bb_fenster).std()
             df_full['Oben'] = df_full['SMA'] + (df_full['STD'] * 2)
             df_full['Unten'] = df_full['SMA'] - (df_full['STD'] * 2)
             
-            # Berechnungen RSI
             delta = df_full['Close'].diff()
             gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
             loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
             df_full['RSI'] = 100 - (100 / (1 + (gain/loss.replace(0, 1e-10))))
 
-            # Berechnungen MACD
             df_full['EMA_12'] = df_full['Close'].ewm(span=12, adjust=False).mean()
             df_full['EMA_26'] = df_full['Close'].ewm(span=26, adjust=False).mean()
             df_full['MACD'] = df_full['EMA_12'] - df_full['EMA_26']
@@ -201,7 +199,7 @@ if query:
 
             df = df_full.loc[df_crop.index[0]:].copy()
 
-            # Metriken Grundlagen
+            # Metriken
             start_preis = float(df['Close'].iloc[0])
             aktueller_preis = float(df['Close'].iloc[-1])
             perf_abs = aktueller_preis - start_preis
@@ -209,18 +207,17 @@ if query:
             rsi_val = df['RSI'].iloc[-1]
             rsi_str = f"{rsi_val:.1f}" if pd.notna(rsi_val) else "N/A"
 
-            # Dividende berechnen (für Einzelansicht oben)
+            # Dividende
             div_yield_pct = 0.0
-            divs = aktie.dividends
+            divs = get_cached_dividends(query)
             if not divs.empty:
                 divs.index = pd.to_datetime(divs.index, utc=True)
                 cutoff = pd.Timestamp.now(tz='UTC') - pd.DateOffset(years=2)
                 div_2y_sum = divs[divs.index >= cutoff].sum()
-                if aktueller_preis > 0:
-                    div_yield_pct = ((div_2y_sum / 2) / aktueller_preis) * 100
+                if aktueller_preis > 0: div_yield_pct = ((div_2y_sum / 2) / aktueller_preis) * 100
 
-            # Geschätzte Performance (Analysten-Kursziel)
-            info = aktie.info
+            # Kursziel
+            info = get_cached_info(query)
             target_price = info.get('targetMeanPrice')
             if target_price and aktueller_preis > 0:
                 est_perf = ((target_price - aktueller_preis) / aktueller_preis) * 100
@@ -238,24 +235,14 @@ if query:
             m5.metric("Div. Rendite p.a.", f"{div_yield_pct:.2f}%" if div_yield_pct > 0 else "N/A")
             m6.metric("Analysten-Potenzial", est_perf_str, delta=target_str, delta_color="normal")
 
-            # --- CHARTING ---
+            # CHARTING
             fig = make_subplots(rows=4, cols=1, shared_xaxes=True, vertical_spacing=0.04, row_heights=[0.5, 0.1, 0.2, 0.2])
             
             fig.add_trace(go.Scatter(x=df.index, y=df['Unten'], line=dict(color='rgba(255,255,255,0)'), showlegend=False), row=1, col=1)
             fig.add_trace(go.Scatter(x=df.index, y=df['Oben'], fill='tonexty', fillcolor='rgba(100, 150, 255, 0.07)', line=dict(color='rgba(255,255,255,0)'), name="Bollinger"), row=1, col=1)
             
-            if show_candles:
-                fig.add_trace(go.Candlestick(
-                    x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], 
-                    name="Candles", increasing_line_color='#00ff00', decreasing_line_color='#ff4b4b',
-                    opacity=0.6 if show_line else 1.0
-                ), row=1, col=1)
-
-            if show_line:
-                fig.add_trace(go.Scatter(
-                    x=df.index, y=df['Close'], mode='lines', name='Trendlinie',
-                    line=dict(color='#00BFFF', width=2)
-                ), row=1, col=1)
+            if show_candles: fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name="Candles", increasing_line_color='#00ff00', decreasing_line_color='#ff4b4b', opacity=0.6 if show_line else 1.0), row=1, col=1)
+            if show_line: fig.add_trace(go.Scatter(x=df.index, y=df['Close'], mode='lines', name='Trendlinie', line=dict(color='#00BFFF', width=2)), row=1, col=1)
 
             def draw_zones(starts, color):
                 for d in df[starts].index:
@@ -265,8 +252,7 @@ if query:
                         end = df.index[min(idx + block_breite, len(df)-1)]
                         y_h, y_l = float(df['High'].iloc[idx]), float(df['Low'].iloc[idx])
                         fig.add_shape(type="rect", x0=d, y0=y_l, x1=end, y1=y_h, fillcolor=color, line_width=0, layer="below", row=1, col=1)
-                        for y in [y_h, (y_h+y_l)/2, y_l]:
-                            fig.add_shape(type="line", x0=end, y0=y, x1=df.index[-1], y1=y, line=dict(color=color, width=1, dash="dot"), layer="below", row=1, col=1)
+                        for y in [y_h, (y_h+y_l)/2, y_l]: fig.add_shape(type="line", x0=end, y0=y, x1=df.index[-1], y1=y, line=dict(color=color, width=1, dash="dot"), layer="below", row=1, col=1)
                     except: continue
 
             draw_zones((df['Close'] > df['Oben']) & (df['Close'].shift(1) <= df['Oben'].shift(1)), "rgba(0, 150, 255, 0.3)") 
@@ -303,179 +289,132 @@ if query:
                 prog_bar = st.progress(0)
                 items_len = len(portfolio)
 
-                def process_portfolio_item(p_name, p_data):
-                    p_ticker = p_data["ticker"]
-                    p_menge = p_data.get("menge", 0.0)
-                    p_sector = p_data.get("sector", "Unbekannt")
-                    p_country = p_data.get("country", "Unbekannt")
-                    
-                    # Normale Initialisierung, OHNE custom session
-                    p_ticker_obj = yf.Ticker(p_ticker)
-                    
-                    # --- BESSERE ERKENNUNG VON ETFs vs. AKTIEN ---
+                st.caption("Lade Analysedaten (gecached für Cloud-Sicherheit)...")
+                
+                for idx, (p_name, p_data) in enumerate(portfolio.items()):
                     try:
-                        quote_type = p_ticker_obj.info.get('quoteType', '').upper()
-                        if quote_type in ['ETF', 'MUTUALFUND']:
-                            asset_type = "ETF"
-                        elif quote_type == 'EQUITY':
-                            asset_type = "Aktie"
-                        else:
-                            asset_type = "ETF" if "ETF" in p_name.upper() or "FUND" in p_name.upper() else "Aktie"
-                    except:
-                        asset_type = "ETF" if "ETF" in p_name.upper() else "Aktie"
-                    # ---------------------------------------------
-                    
-                    # --- DYNAMISCHER LÄNDER- & SEKTOR-FIX ---
-                    if p_sector == "Unbekannt" or p_country == "Unbekannt" or not p_sector or not p_country:
-                        try:
-                            info = p_ticker_obj.info
-                            if p_sector == "Unbekannt" or not p_sector:
-                                p_sector = info.get('sector', info.get('category', 'Unbekannt'))
-                            if p_country == "Unbekannt" or not p_country:
-                                p_country = info.get('country', 'Unbekannt')
-                        except:
-                            pass
+                        p_ticker = p_data["ticker"]
+                        p_menge = p_data.get("menge", 0.0)
+                        p_sector = p_data.get("sector", "Unbekannt")
+                        p_country = p_data.get("country", "Unbekannt")
+                        
+                        info = get_cached_info(p_ticker)
+                        quote_type = info.get('quoteType', '').upper()
+                        
+                        if quote_type in ['ETF', 'MUTUALFUND']: asset_type = "ETF"
+                        elif quote_type == 'EQUITY': asset_type = "Aktie"
+                        else: asset_type = "ETF" if "ETF" in p_name.upper() or "FUND" in p_name.upper() else "Aktie"
+                        
+                        if p_sector == "Unbekannt" or p_country == "Unbekannt" or not p_sector or not p_country:
+                            p_sector = info.get('sector', info.get('category', 'Unbekannt'))
+                            p_country = info.get('country', 'Unbekannt')
+                                
+                        if asset_type == "ETF":
+                            if p_sector == "Unbekannt" or not p_sector: p_sector = "Diversifiziert (ETF)"
+                            if p_country == "Unbekannt" or not p_country: p_country = "Global / Region (ETF)"
+                        
+                        p_df = get_cached_history(p_ticker, cfg['buf'], cfg['int'])
+                        if p_df.empty: continue
+                        
+                        p_sma = p_df['Close'].rolling(window=bb_fenster).mean()
+                        p_std = p_df['Close'].rolling(window=bb_fenster).std()
+                        p_up = float(p_sma.iloc[-1] + (p_std.iloc[-1] * 2))
+                        p_lo = float(p_sma.iloc[-1] - (p_std.iloc[-1] * 2))
+                        
+                        p_delta = p_df['Close'].diff()
+                        p_gain = (p_delta.where(p_delta > 0, 0)).rolling(window=14).mean()
+                        p_loss = (-p_delta.where(p_delta < 0, 0)).rolling(window=14).mean()
+                        p_rsi_val = 100 - (100 / (1 + (p_gain/p_loss.replace(0, 1e-10))))
+                        cur_rsi = float(p_rsi_val.iloc[-1]) if pd.notna(p_rsi_val.iloc[-1]) else 50.0
+                        
+                        p_macd = p_df['Close'].ewm(span=12, adjust=False).mean() - p_df['Close'].ewm(span=26, adjust=False).mean()
+                        p_macd_sig = p_macd.ewm(span=9, adjust=False).mean()
+                        macd_hist = float(p_macd.iloc[-1] - p_macd_sig.iloc[-1])
+                        
+                        cur_close = float(p_df['Close'].iloc[-1])
+                        p_wert = cur_close * p_menge
+                        
+                        score = 0
+                        if cur_rsi < 30: score += 1
+                        elif cur_rsi > 70: score -= 1
+                        if cur_close < p_lo: score += 1
+                        elif cur_close > p_up: score -= 1
+                        if macd_hist > 0: score += 1
+                        elif macd_hist < 0: score -= 1
+                        
+                        empf = "Neutral"
+                        if score >= 2: empf = "🟢 KAUF"
+                        elif score <= -2: empf = "🔴 VERKAUF"
+                        elif score == 1: empf = "↗️ Halten (Aufwärts)"
+                        elif score == -1: empf = "↘️ Halten (Abwärts)"
+                        
+                        signal = "Neutral"
+                        if cur_close > p_up: signal = "📈 Überkauft (Oben)"
+                        elif cur_close < p_lo: signal = "📉 Überverkauft (Dip)"
+                        
+                        df_1y = get_cached_history(p_ticker, "1y", "1d")
+                        perf_1d = perf_1mo = perf_3mo = perf_1y = 0.0
+                        erfolg_oben = total_oben = erfolg_unten = total_unten = 0
+                        trefferquote = 0.0 
+                        
+                        if not df_1y.empty and len(df_1y) > bb_fenster:
+                            c_curr = float(df_1y['Close'].iloc[-1])
+                            perf_1d = ((c_curr - df_1y['Close'].iloc[-2]) / df_1y['Close'].iloc[-2]) * 100 if len(df_1y) >= 2 else 0
+                            perf_1mo = ((c_curr - df_1y['Close'].iloc[-min(22, len(df_1y))]) / df_1y['Close'].iloc[-min(22, len(df_1y))]) * 100 if len(df_1y) >= 22 else 0
+                            perf_3mo = ((c_curr - df_1y['Close'].iloc[-min(64, len(df_1y))]) / df_1y['Close'].iloc[-min(64, len(df_1y))]) * 100 if len(df_1y) >= 64 else 0
+                            perf_1y = ((c_curr - df_1y['Close'].iloc[0]) / df_1y['Close'].iloc[0]) * 100
                             
-                    if asset_type == "ETF":
-                        if p_sector == "Unbekannt" or not p_sector:
-                            p_sector = "Diversifiziert (ETF)"
-                        if p_country == "Unbekannt" or not p_country:
-                            p_country = "Global / Region (ETF)"
-                    # ---------------------------------------------
-                    
-                    p_df = p_ticker_obj.history(period=cfg['buf'], interval=cfg['int'])
-                    if p_df.empty: return None, 0.0, 0.0
-                    
-                    # Bollinger
-                    p_sma = p_df['Close'].rolling(window=bb_fenster).mean()
-                    p_std = p_df['Close'].rolling(window=bb_fenster).std()
-                    p_up = float(p_sma.iloc[-1] + (p_std.iloc[-1] * 2))
-                    p_lo = float(p_sma.iloc[-1] - (p_std.iloc[-1] * 2))
-                    
-                    # RSI
-                    p_delta = p_df['Close'].diff()
-                    p_gain = (p_delta.where(p_delta > 0, 0)).rolling(window=14).mean()
-                    p_loss = (-p_delta.where(p_delta < 0, 0)).rolling(window=14).mean()
-                    p_rsi_val = 100 - (100 / (1 + (p_gain/p_loss.replace(0, 1e-10))))
-                    cur_rsi = float(p_rsi_val.iloc[-1]) if pd.notna(p_rsi_val.iloc[-1]) else 50.0
-                    
-                    # MACD für Scanner
-                    p_macd = p_df['Close'].ewm(span=12, adjust=False).mean() - p_df['Close'].ewm(span=26, adjust=False).mean()
-                    p_macd_sig = p_macd.ewm(span=9, adjust=False).mean()
-                    macd_hist = float(p_macd.iloc[-1] - p_macd_sig.iloc[-1])
-                    
-                    cur_close = float(p_df['Close'].iloc[-1])
-                    p_wert = cur_close * p_menge
-                    
-                    # --- EMPFEHLUNGS-LOGIK ---
-                    score = 0
-                    if cur_rsi < 30: score += 1
-                    elif cur_rsi > 70: score -= 1
-                    
-                    if cur_close < p_lo: score += 1
-                    elif cur_close > p_up: score -= 1
-                    
-                    if macd_hist > 0: score += 1
-                    elif macd_hist < 0: score -= 1
-                    
-                    empf = "Neutral"
-                    if score >= 2: empf = "🟢 KAUF"
-                    elif score <= -2: empf = "🔴 VERKAUF"
-                    elif score == 1: empf = "↗️ Halten (Aufwärts)"
-                    elif score == -1: empf = "↘️ Halten (Abwärts)"
-                    
-                    signal = "Neutral"
-                    if cur_close > p_up: signal = "📈 Überkauft (Oben)"
-                    elif cur_close < p_lo: signal = "📉 Überverkauft (Dip)"
-                    
-                    df_1y = p_ticker_obj.history(period="1y", interval="1d")
-                    perf_1d = perf_1mo = perf_3mo = perf_1y = 0.0
-                    erfolg_oben = total_oben = erfolg_unten = total_unten = 0
-                    trefferquote = 0.0 
-                    
-                    if not df_1y.empty and len(df_1y) > bb_fenster:
-                        c_curr = float(df_1y['Close'].iloc[-1])
-                        perf_1d = ((c_curr - df_1y['Close'].iloc[-2]) / df_1y['Close'].iloc[-2]) * 100 if len(df_1y) >= 2 else 0
-                        perf_1mo = ((c_curr - df_1y['Close'].iloc[-min(22, len(df_1y))]) / df_1y['Close'].iloc[-min(22, len(df_1y))]) * 100 if len(df_1y) >= 22 else 0
-                        perf_3mo = ((c_curr - df_1y['Close'].iloc[-min(64, len(df_1y))]) / df_1y['Close'].iloc[-min(64, len(df_1y))]) * 100 if len(df_1y) >= 64 else 0
-                        perf_1y = ((c_curr - df_1y['Close'].iloc[0]) / df_1y['Close'].iloc[0]) * 100
-                        
-                        df_1y['SMA_1y'] = df_1y['Close'].rolling(window=bb_fenster).mean()
-                        df_1y['STD_1y'] = df_1y['Close'].rolling(window=bb_fenster).std()
-                        df_1y['Up_1y'] = df_1y['SMA_1y'] + (df_1y['STD_1y'] * 2)
-                        df_1y['Low_1y'] = df_1y['SMA_1y'] - (df_1y['STD_1y'] * 2)
-                        
-                        df_1y['Break_Up'] = (df_1y['Close'] > df_1y['Up_1y']) & (df_1y['Close'].shift(1) <= df_1y['Up_1y'].shift(1))
-                        df_1y['Break_Down'] = (df_1y['Close'] < df_1y['Low_1y']) & (df_1y['Close'].shift(1) >= df_1y['Low_1y'].shift(1))
-                        df_1y['Close_future'] = df_1y['Close'].shift(-int(tage_backtest))
-                        
-                        valid_break_up = df_1y[df_1y['Break_Up']].dropna(subset=['Close_future'])
-                        total_oben = len(valid_break_up)
-                        erfolg_oben = len(valid_break_up[valid_break_up['Close_future'] > valid_break_up['Close']])
-                        
-                        valid_break_down = df_1y[df_1y['Break_Down']].dropna(subset=['Close_future'])
-                        total_unten = len(valid_break_down)
-                        erfolg_unten = len(valid_break_down[valid_break_down['Close_future'] > valid_break_down['Close']])
+                            df_1y['SMA_1y'] = df_1y['Close'].rolling(window=bb_fenster).mean()
+                            df_1y['STD_1y'] = df_1y['Close'].rolling(window=bb_fenster).std()
+                            df_1y['Up_1y'] = df_1y['SMA_1y'] + (df_1y['STD_1y'] * 2)
+                            df_1y['Low_1y'] = df_1y['SMA_1y'] - (df_1y['STD_1y'] * 2)
+                            
+                            df_1y['Break_Up'] = (df_1y['Close'] > df_1y['Up_1y']) & (df_1y['Close'].shift(1) <= df_1y['Up_1y'].shift(1))
+                            df_1y['Break_Down'] = (df_1y['Close'] < df_1y['Low_1y']) & (df_1y['Close'].shift(1) >= df_1y['Low_1y'].shift(1))
+                            df_1y['Close_future'] = df_1y['Close'].shift(-int(tage_backtest))
+                            
+                            valid_break_up = df_1y[df_1y['Break_Up']].dropna(subset=['Close_future'])
+                            total_oben = len(valid_break_up)
+                            erfolg_oben = len(valid_break_up[valid_break_up['Close_future'] > valid_break_up['Close']])
+                            
+                            valid_break_down = df_1y[df_1y['Break_Down']].dropna(subset=['Close_future'])
+                            total_unten = len(valid_break_down)
+                            erfolg_unten = len(valid_break_down[valid_break_down['Close_future'] > valid_break_down['Close']])
 
-                        gesamt_signale = total_oben + total_unten
-                        if gesamt_signale > 0:
-                            trefferquote = (erfolg_oben + erfolg_unten) / gesamt_signale
-                    
-                    div_yield_pct = 0.0
-                    expected_div_abs = 0.0
-                    divs = p_ticker_obj.dividends
-                    if not divs.empty:
-                        divs.index = pd.to_datetime(divs.index, utc=True)
-                        cutoff = pd.Timestamp.now(tz='UTC') - pd.DateOffset(years=2)
-                        div_2y_sum = divs[divs.index >= cutoff].sum()
-                        if cur_close > 0:
-                            div_yield_pct = ((div_2y_sum / 2) / cur_close) * 100
-                        expected_div_abs = (div_2y_sum / 2) * p_menge
-                    
-                    dist_type = "Ausschüttend" if div_yield_pct > 0.0 else "Thesaurierend"
+                            gesamt_signale = total_oben + total_unten
+                            if gesamt_signale > 0: trefferquote = (erfolg_oben + erfolg_unten) / gesamt_signale
+                        
+                        div_yield_pct = 0.0
+                        expected_div_abs = 0.0
+                        divs = get_cached_dividends(p_ticker)
+                        if not divs.empty:
+                            divs.index = pd.to_datetime(divs.index, utc=True)
+                            cutoff = pd.Timestamp.now(tz='UTC') - pd.DateOffset(years=2)
+                            div_2y_sum = divs[divs.index >= cutoff].sum()
+                            if cur_close > 0: div_yield_pct = ((div_2y_sum / 2) / cur_close) * 100
+                            expected_div_abs = (div_2y_sum / 2) * p_menge
+                        
+                        dist_type = "Ausschüttend" if div_yield_pct > 0.0 else "Thesaurierend"
 
-                    result_dict = {
-                        "Asset": p_name, 
-                        "Menge": round(p_menge, 2),
-                        "Wert": round(p_wert, 2),
-                        "Kurs": round(cur_close, 2), 
-                        "1T %": round(perf_1d, 2),
-                        "1M %": round(perf_1mo, 2),
-                        "3M %": round(perf_3mo, 2),
-                        "1J %": round(perf_1y, 2),
-                        "Div % p.a.": round(div_yield_pct, 2),
-                        "Empfehlung": empf,
-                        "Signal": signal,
-                        f"Break Oben ({int(tage_backtest)}T)": f"{erfolg_oben}/{total_oben}",
-                        f"Break Unten ({int(tage_backtest)}T)": f"{erfolg_unten}/{total_unten}",
-                        "RSI": round(cur_rsi, 1),
-                        "Trefferquote": trefferquote,
-                        "AssetType": asset_type,
-                        "DistType": dist_type,
-                        "Sector": p_sector,
-                        "Country": p_country
-                    }
-                    return result_dict, p_wert, expected_div_abs
+                        signal_data.append({
+                            "Asset": p_name, "Menge": round(p_menge, 2), "Wert": round(p_wert, 2),
+                            "Kurs": round(cur_close, 2), "1T %": round(perf_1d, 2), "1M %": round(perf_1mo, 2),
+                            "3M %": round(perf_3mo, 2), "1J %": round(perf_1y, 2), "Div % p.a.": round(div_yield_pct, 2),
+                            "Empfehlung": empf, "Signal": signal,
+                            f"Break Oben ({int(tage_backtest)}T)": f"{erfolg_oben}/{total_oben}",
+                            f"Break Unten ({int(tage_backtest)}T)": f"{erfolg_unten}/{total_unten}",
+                            "RSI": round(cur_rsi, 1), "Trefferquote": trefferquote, "AssetType": asset_type,
+                            "DistType": dist_type, "Sector": p_sector, "Country": p_country
+                        })
+                        total_portfolio_wert += p_wert
+                        total_portfolio_div += expected_div_abs
 
-                # REDUZIERTE WORKER FÜR DIE CLOUD + KLEINE PAUSE
-                with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
-                    futures = {executor.submit(process_portfolio_item, name, data): name for name, data in portfolio.items()}
+                    except Exception as e:
+                        pass
                     
-                    completed = 0
-                    for future in concurrent.futures.as_completed(futures):
-                        try:
-                            res = future.result()
-                            if res and res[0]:
-                                res_dict, p_wert, p_div = res
-                                signal_data.append(res_dict)
-                                total_portfolio_wert += p_wert
-                                total_portfolio_div += p_div
-                        except Exception as e:
-                            pass
-                        finally:
-                            completed += 1
-                            prog_bar.progress(completed / items_len)
-                            time.sleep(0.1) # Kurze Pause, um Yahoo nicht zu überlasten
+                    # Update Progress & Schutz vor Ban:
+                    prog_bar.progress((idx + 1) / items_len)
+                    time.sleep(0.3) # Kurze Verschnaufpause für die API pro Ticker
                 
                 prog_bar.empty()
                 
@@ -522,8 +461,7 @@ if query:
                     def render_table(df_subset, is_watchlist=False):
                         if df_subset.empty: return
                         cols_to_drop = ["Trefferquote", "AssetType", "DistType", "Sector", "Country"]
-                        if is_watchlist:
-                            cols_to_drop.append("Wert")
+                        if is_watchlist: cols_to_drop.append("Wert")
                             
                         df_show = df_subset.drop(columns=cols_to_drop, errors='ignore')
                         
@@ -552,8 +490,7 @@ if query:
                             if df_portfolio[df_portfolio["AssetType"] == a_type].empty:
                                 st.caption(f"Keine {a_type}n im Portfolio vorhanden.")
                             st.write("") 
-                    else:
-                        st.info("Dein Portfolio ist noch leer. Füge Aktien mit einer Anzahl > 0 hinzu.")
+                    else: st.info("Dein Portfolio ist noch leer. Füge Aktien mit einer Anzahl > 0 hinzu.")
 
                     # -----------------------------
                     # BEREICH: WATCHLIST
@@ -573,8 +510,7 @@ if query:
                             if df_watchlist[df_watchlist["AssetType"] == a_type].empty:
                                 st.caption(f"Keine {a_type}n auf der Watchlist.")
                             st.write("") 
-                    else:
-                        st.info("Deine Watchlist ist leer. Du kannst Assets tracken, indem du sie mit einer Anzahl von 0 speicherst.")
+                    else: st.info("Deine Watchlist ist leer.")
 
             # -----------------------------
             # BEREICH: PORTFOLIO-ZUSAMMENSETZUNG
@@ -592,19 +528,12 @@ if query:
                         title_suffix = " (nach Anzahl)"
 
                     fig_donut = go.Figure(data=[go.Pie(labels=counts.index, values=counts.values, hole=.4)])
-                    fig_donut.update_layout(
-                        title_text=title + title_suffix, 
-                        template="plotly_dark", 
-                        margin=dict(t=50, b=20, l=20, r=20),
-                        height=350,
-                        showlegend=False
-                    )
+                    fig_donut.update_layout(title_text=title + title_suffix, template="plotly_dark", margin=dict(t=50, b=20, l=20, r=20), height=350, showlegend=False)
                     fig_donut.update_traces(textposition='inside', textinfo='percent+label')
                     return fig_donut
 
                 c1, c2 = st.columns(2)
                 c3, c4 = st.columns(2)
-                
                 c1.plotly_chart(create_donut(df_portfolio, "AssetType", "ETFs vs. Aktien"), use_container_width=True)
                 c2.plotly_chart(create_donut(df_portfolio, "DistType", "Ausschüttend vs. Thesaurierend"), use_container_width=True)
                 c3.plotly_chart(create_donut(df_portfolio, "Sector", "Sektoren / Kategorien"), use_container_width=True)
