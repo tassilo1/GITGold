@@ -1,0 +1,100 @@
+{
+    "Space Innovators": {
+        "ticker": "JEDG.L",
+        "menge": 7.0,
+        "sector": "Unbekannt",
+        "country": "Unbekannt",
+        "currency": ""
+    },
+    "Futur of Defence": {
+        "ticker": "ASWC.DE",
+        "menge": 25.0,
+        "sector": "Unbekannt",
+        "country": "Unbekannt",
+        "currency": ""
+    },
+    "QUALCOMM ": {
+        "ticker": "QCI.F",
+        "menge": 2.043763,
+        "sector": "Technology",
+        "country": "United States",
+        "currency": ""
+    },
+    "Gold 3x": {
+        "ticker": "3GOL.MI",
+        "menge": 1.0,
+        "sector": "Unbekannt",
+        "country": "Unbekannt",
+        "currency": ""
+    },
+    "Gold Miners USD": {
+        "ticker": "GDX.L",
+        "menge": 2.0,
+        "sector": "Unbekannt",
+        "country": "Unbekannt",
+        "currency": ""
+    },
+    "MSCI Korea USD Dist": {
+        "ticker": "IDKO.L",
+        "menge": 2.0,
+        "sector": "Unbekannt",
+        "country": "Unbekannt",
+        "currency": ""
+    },
+    "Grupa Kety S.A. (Stuttgart)": {
+        "ticker": "PLKETY000011.SG",
+        "menge": 1.01,
+        "sector": "Unbekannt",
+        "country": "Unbekannt",
+        "currency": ""
+    },
+    "Gold Minors": {
+        "ticker": "GDX.L",
+        "menge": 2.0,
+        "sector": "Unbekannt",
+        "country": "Unbekannt",
+        "currency": ""
+    },
+    "Battery Value Chain": {
+        "ticker": "BATT.L",
+        "menge": 3.96,
+        "sector": "Unbekannt",
+        "country": "Unbekannt",
+        "currency": ""
+    },
+    "Sibanye Stillwater ": {
+        "ticker": "ZAE000259701.SG",
+        "menge": 33.4,
+        "sector": "Unbekannt",
+        "country": "Unbekannt",
+        "currency": ""
+    },
+    "Coca Cola Femsa ": {
+        "ticker": "KOF",
+        "menge": 1.03,
+        "sector": "Consumer Defensive",
+        "country": "Mexico",
+        "currency": ""
+    },
+    "Alphabet": {
+        "ticker": "ABEA.DE",
+        "menge": 0.34,
+        "sector": "Communication Services",
+        "country": "United States",
+        "currency": ""
+    },
+    "Defence USD Acc": {
+        "ticker": "DFEN.DE",
+        "menge": 0.0,
+        "sector": "Unbekannt",
+        "country": "Unbekannt",
+        "currency": ""
+    },
+    "Lumentum": {
+        "ticker": "LU2.DE",
+        "menge": 0.0,
+        "sector": "Technology",
+        "country": "United States",
+        "currency": ""
+    }
+}
