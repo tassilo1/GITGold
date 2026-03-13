@@ -96,39 +96,6 @@ def convert_df_to_csv(df):
 # --- 3. SETUP & SIDEBAR ---
 
 st.set_page_config(page_title="Aktienanalyse Pro", layout="wide")
-
-# --- NEUER CSS FIX: BÜNDIG, KLEINERE SCHRIFT, SILBENTRENNUNG ---
-st.markdown("""
-    <style>
-        [data-testid="stTable"] table {
-            width: 100% !important;
-            table-layout: fixed !important;
-        }
-        [data-testid="stTable"] th, [data-testid="stTable"] td {
-            text-align: center !important;
-            font-size: 0.85em !important;
-            padding: 8px 4px !important;
-            white-space: normal !important;
-        }
-        /* Spalte 1 (Name): Mehr Platz, minimal kleinere Schrift, schöne Silbentrennung */
-        [data-testid="stTable"] th:nth-child(1), [data-testid="stTable"] td:nth-child(1) {
-            width: 25% !important; 
-            text-align: left !important;
-            font-size: 0.80em !important;
-            word-break: normal !important;
-            overflow-wrap: break-word !important;
-            -webkit-hyphens: auto;
-            -moz-hyphens: auto;
-            hyphens: auto;
-        }
-        /* Die letzten beiden Spalten (Empfehlung & Signal) etwas breiter, da Text dort länger sein kann */
-        [data-testid="stTable"] th:nth-last-child(1), [data-testid="stTable"] td:nth-last-child(1),
-        [data-testid="stTable"] th:nth-last-child(2), [data-testid="stTable"] td:nth-last-child(2) {
-            width: 11% !important; 
-        }
-    </style>
-""", unsafe_allow_html=True)
-
 st.title("📈 Professionelles Analyse-Dashboard")
 
 portfolio = lade_portfolio()
@@ -509,7 +476,8 @@ if query:
                                                      .applymap(style_perf, subset=['1T %', '1M %', '3M %', '1J %']) \
                                                      .format(precision=2)
                         
-                        st.table(styled_df)
+                        # --- HIER IST DIE MAGIE: STREAMLIT DATAFRAME ---
+                        st.dataframe(styled_df, use_container_width=True)
 
                     if not df_portfolio.empty:
                         for a_type in ["Aktie", "ETF"]:
