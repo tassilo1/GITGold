@@ -32,18 +32,25 @@ def finde_ticker_liste(suchbegriff):
 
 @st.cache_data(ttl=900, show_spinner=False)
 def get_cached_history(ticker, period, interval):
-    try: return yf.Ticker(ticker).history(period=period, interval=interval)
-    except: return pd.DataFrame()
+    try:
+        df = yf.Ticker(ticker).history(period=period, interval=interval)
+        return df
+    except:
+        return pd.DataFrame()
 
 @st.cache_data(ttl=86400, show_spinner=False)
 def get_cached_info(ticker):
-    try: return yf.Ticker(ticker).info
-    except: return {}
+    try:
+        return yf.Ticker(ticker).info
+    except:
+        return {}
 
 @st.cache_data(ttl=86400, show_spinner=False)
 def get_cached_dividends(ticker):
-    try: return yf.Ticker(ticker).dividends
-    except: return pd.Series()
+    try:
+        return yf.Ticker(ticker).dividends
+    except:
+        return pd.Series()
 
 # --- 2. HILFSFUNKTIONEN (JSON-BASIERT) ---
 
@@ -90,10 +97,8 @@ def convert_df_to_csv(df):
 
 st.set_page_config(page_title="Aktienanalyse Pro", layout="wide")
 
-# MOBILE CSS OPTIMIERUNG
 st.markdown("""
     <style>
-        /* Reduziert ungenutzten Platz an den Seitenrändern für Handys */
         .block-container {
             padding-top: 2rem !important;
             padding-bottom: 2rem !important;
@@ -233,7 +238,6 @@ if query:
                 est_perf_str = "N/A"
                 target_str = "Kein Kursziel"
 
-            # Streamlit bricht diese Columns auf Handys automatisch um
             m1, m2, m3, m4, m5, m6 = st.columns(6)
             m1.metric("Asset", display_name)
             m2.metric("Kurs", f"{aktueller_preis:.2f} {asset_currency_sym}")
@@ -277,17 +281,20 @@ if query:
             fig.add_trace(go.Scatter(x=df.index, y=df['MACD'], line=dict(color='#00BFFF', width=1.5), name="MACD"), row=4, col=1)
             fig.add_trace(go.Scatter(x=df.index, y=df['MACD_Signal'], line=dict(color='#ff9900', width=1.5), name="Signal"), row=4, col=1)
 
-            # Mobile-Optimierungen für den Chart
-            fig.update_xaxes(showgrid=True, gridcolor='rgba(255,255,255,0.05)', rangeslider_visible=False)
+            # --- FIX: SCROLLEN AUF DEM HANDY ERLAUBEN ---
+            # fixedrange=True verhindert das Zoomen der Achsen
+            fig.update_xaxes(showgrid=True, gridcolor='rgba(255,255,255,0.05)', rangeslider_visible=False, fixedrange=True)
+            fig.update_yaxes(fixedrange=True)
+            
             fig.update_layout(
                 template="plotly_dark", 
-                height=850, # Etwas kompakter für Handys
-                margin=dict(l=10, r=10, b=10, t=30), # Weniger Leerraum
+                height=850, 
+                margin=dict(l=10, r=10, b=10, t=30), 
                 showlegend=True, 
                 hovermode="x unified",
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1) # Legende nach oben horizontal
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                dragmode=False  # Verhindert das Aufziehen von Rechtecken zum Zoomen!
             )
-            # displayModeBar=False blendet störende Werkzeuge auf dem Touchscreen aus
             st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
         except Exception as e:
@@ -548,9 +555,10 @@ if query:
                     fig_donut.update_layout(
                         title_text=title + title_suffix, 
                         template="plotly_dark", 
-                        margin=dict(t=30, b=10, l=10, r=10), # Optimiert für Handys
+                        margin=dict(t=30, b=10, l=10, r=10), 
                         height=300, 
-                        showlegend=False
+                        showlegend=False,
+                        dragmode=False # Auch bei den Donuts das Markieren verbieten
                     )
                     fig_donut.update_traces(textposition='inside', textinfo='percent+label')
                     return fig_donut
