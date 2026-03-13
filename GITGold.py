@@ -11,7 +11,7 @@ import time
 
 # --- 1. CLOUD-SICHERE DATENABFRAGE (CACHING) ---
 
-@st.cache_data(ttl=3600)  # Suchergebnisse für 1 Stunde im Cache
+@st.cache_data(ttl=3600)
 def finde_ticker_liste(suchbegriff):
     if not suchbegriff: return []
     url = f"https://query2.finance.yahoo.com/v1/finance/search?q={requests.utils.quote(suchbegriff)}"
@@ -30,27 +30,20 @@ def finde_ticker_liste(suchbegriff):
         return ergebnisse
     except: return []
 
-@st.cache_data(ttl=900, show_spinner=False)  # Kurse für 15 Minuten speichern (900 Sekunden)
+@st.cache_data(ttl=900, show_spinner=False)
 def get_cached_history(ticker, period, interval):
-    try:
-        df = yf.Ticker(ticker).history(period=period, interval=interval)
-        return df
-    except:
-        return pd.DataFrame()
+    try: return yf.Ticker(ticker).history(period=period, interval=interval)
+    except: return pd.DataFrame()
 
-@st.cache_data(ttl=86400, show_spinner=False)  # Stammdaten (Sektor etc.) für 24h speichern!
+@st.cache_data(ttl=86400, show_spinner=False)
 def get_cached_info(ticker):
-    try:
-        return yf.Ticker(ticker).info
-    except:
-        return {}
+    try: return yf.Ticker(ticker).info
+    except: return {}
 
-@st.cache_data(ttl=86400, show_spinner=False)  # Dividenden für 24h speichern!
+@st.cache_data(ttl=86400, show_spinner=False)
 def get_cached_dividends(ticker):
-    try:
-        return yf.Ticker(ticker).dividends
-    except:
-        return pd.Series()
+    try: return yf.Ticker(ticker).dividends
+    except: return pd.Series()
 
 # --- 2. HILFSFUNKTIONEN (JSON-BASIERT) ---
 
@@ -96,6 +89,20 @@ def convert_df_to_csv(df):
 # --- 3. SETUP & SIDEBAR ---
 
 st.set_page_config(page_title="Aktienanalyse Pro", layout="wide")
+
+# MOBILE CSS OPTIMIERUNG
+st.markdown("""
+    <style>
+        /* Reduziert ungenutzten Platz an den Seitenrändern für Handys */
+        .block-container {
+            padding-top: 2rem !important;
+            padding-bottom: 2rem !important;
+            padding-left: 1rem !important;
+            padding-right: 1rem !important;
+        }
+    </style>
+""", unsafe_allow_html=True)
+
 st.title("📈 Professionelles Analyse-Dashboard")
 
 portfolio = lade_portfolio()
@@ -226,6 +233,7 @@ if query:
                 est_perf_str = "N/A"
                 target_str = "Kein Kursziel"
 
+            # Streamlit bricht diese Columns auf Handys automatisch um
             m1, m2, m3, m4, m5, m6 = st.columns(6)
             m1.metric("Asset", display_name)
             m2.metric("Kurs", f"{aktueller_preis:.2f} {asset_currency_sym}")
@@ -269,9 +277,18 @@ if query:
             fig.add_trace(go.Scatter(x=df.index, y=df['MACD'], line=dict(color='#00BFFF', width=1.5), name="MACD"), row=4, col=1)
             fig.add_trace(go.Scatter(x=df.index, y=df['MACD_Signal'], line=dict(color='#ff9900', width=1.5), name="Signal"), row=4, col=1)
 
+            # Mobile-Optimierungen für den Chart
             fig.update_xaxes(showgrid=True, gridcolor='rgba(255,255,255,0.05)', rangeslider_visible=False)
-            fig.update_layout(template="plotly_dark", height=1000, showlegend=True, hovermode="x unified")
-            st.plotly_chart(fig, use_container_width=True)
+            fig.update_layout(
+                template="plotly_dark", 
+                height=850, # Etwas kompakter für Handys
+                margin=dict(l=10, r=10, b=10, t=30), # Weniger Leerraum
+                showlegend=True, 
+                hovermode="x unified",
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1) # Legende nach oben horizontal
+            )
+            # displayModeBar=False blendet störende Werkzeuge auf dem Touchscreen aus
+            st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 
         except Exception as e:
             st.error(f"Fehler beim Zeichnen des Charts: {e}")
@@ -476,7 +493,6 @@ if query:
                                                      .applymap(style_perf, subset=['1T %', '1M %', '3M %', '1J %']) \
                                                      .format(precision=2)
                         
-                        # --- HIER IST DIE MAGIE: STREAMLIT DATAFRAME ---
                         st.dataframe(styled_df, use_container_width=True)
 
                     if not df_portfolio.empty:
@@ -529,13 +545,19 @@ if query:
                         title_suffix = " (nach Anzahl)"
 
                     fig_donut = go.Figure(data=[go.Pie(labels=counts.index, values=counts.values, hole=.4)])
-                    fig_donut.update_layout(title_text=title + title_suffix, template="plotly_dark", margin=dict(t=50, b=20, l=20, r=20), height=350, showlegend=False)
+                    fig_donut.update_layout(
+                        title_text=title + title_suffix, 
+                        template="plotly_dark", 
+                        margin=dict(t=30, b=10, l=10, r=10), # Optimiert für Handys
+                        height=300, 
+                        showlegend=False
+                    )
                     fig_donut.update_traces(textposition='inside', textinfo='percent+label')
                     return fig_donut
 
                 c1, c2 = st.columns(2)
                 c3, c4 = st.columns(2)
-                c1.plotly_chart(create_donut(df_portfolio, "AssetType", "ETFs vs. Aktien"), use_container_width=True)
-                c2.plotly_chart(create_donut(df_portfolio, "DistType", "Ausschüttend vs. Thesaurierend"), use_container_width=True)
-                c3.plotly_chart(create_donut(df_portfolio, "Sector", "Sektoren / Kategorien"), use_container_width=True)
-                c4.plotly_chart(create_donut(df_portfolio, "Country", "Herkunftsländer"), use_container_width=True)
+                c1.plotly_chart(create_donut(df_portfolio, "AssetType", "ETFs vs. Aktien"), use_container_width=True, config={'displayModeBar': False})
+                c2.plotly_chart(create_donut(df_portfolio, "DistType", "Ausschüttend vs. Thesaurierend"), use_container_width=True, config={'displayModeBar': False})
+                c3.plotly_chart(create_donut(df_portfolio, "Sector", "Sektoren / Kategorien"), use_container_width=True, config={'displayModeBar': False})
+                c4.plotly_chart(create_donut(df_portfolio, "Country", "Herkunftsländer"), use_container_width=True, config={'displayModeBar': False})
