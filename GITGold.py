@@ -97,7 +97,7 @@ def convert_df_to_csv(df):
 
 st.set_page_config(page_title="Aktienanalyse Pro", layout="wide")
 
-# --- KORRIGIERTER CSS FIX FÜR BÜNDIGE TABELLEN MIT ZEILENUMBRUCH ---
+# --- NEUER CSS FIX: BÜNDIG, KLEINERE SCHRIFT, SILBENTRENNUNG ---
 st.markdown("""
     <style>
         [data-testid="stTable"] table {
@@ -108,15 +108,22 @@ st.markdown("""
             text-align: center !important;
             font-size: 0.85em !important;
             padding: 8px 4px !important;
-            white-space: normal !important; /* Erlaubt Zeilenumbrüche */
-            word-wrap: break-word !important; /* Bricht zu lange Wörter um */
+            white-space: normal !important;
         }
+        /* Spalte 1 (Name): Mehr Platz, minimal kleinere Schrift, schöne Silbentrennung */
         [data-testid="stTable"] th:nth-child(1), [data-testid="stTable"] td:nth-child(1) {
-            width: 20% !important; /* Etwas mehr Platz für den Namen */
+            width: 25% !important; 
             text-align: left !important;
+            font-size: 0.80em !important;
+            word-break: normal !important;
+            overflow-wrap: break-word !important;
+            -webkit-hyphens: auto;
+            -moz-hyphens: auto;
+            hyphens: auto;
         }
-        [data-testid="stTable"] th:nth-child(10), [data-testid="stTable"] td:nth-child(10),
-        [data-testid="stTable"] th:nth-child(11), [data-testid="stTable"] td:nth-child(11) {
+        /* Die letzten beiden Spalten (Empfehlung & Signal) etwas breiter, da Text dort länger sein kann */
+        [data-testid="stTable"] th:nth-last-child(1), [data-testid="stTable"] td:nth-last-child(1),
+        [data-testid="stTable"] th:nth-last-child(2), [data-testid="stTable"] td:nth-last-child(2) {
             width: 11% !important; 
         }
     </style>
