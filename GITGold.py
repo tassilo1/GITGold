@@ -4,18 +4,10 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import requests
-from requests import Session
 import os
 import json
 import concurrent.futures
 import time
-
-# --- 0. CLOUD-SETUP FÜR YAHOO FINANCE ---
-# Das verhindert, dass Yahoo Finance die Streamlit-Cloud blockiert
-yf_session = Session()
-yf_session.headers.update({
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-})
 
 # --- 1. HILFSFUNKTIONEN (JSON-BASIERT) ---
 
@@ -23,8 +15,9 @@ yf_session.headers.update({
 def finde_ticker_liste(suchbegriff):
     if not suchbegriff: return []
     url = f"https://query2.finance.yahoo.com/v1/finance/search?q={requests.utils.quote(suchbegriff)}"
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0'} 
     try:
-        response = yf_session.get(url, timeout=5).json()
+        response = requests.get(url, headers=headers, timeout=5).json()
         ergebnisse = []
         if 'quotes' in response:
             for t in response['quotes']:
@@ -137,7 +130,7 @@ else:
             if st.sidebar.button("💾 Speichern"): 
                 with st.spinner("Speichere Asset..."):
                     try:
-                        info_data = yf.Ticker(query, session=yf_session).info
+                        info_data = yf.Ticker(query).info
                         sec = info_data.get('sector', info_data.get('category', 'Unbekannt'))
                         ctry = info_data.get('country', 'Unbekannt')
                     except:
@@ -176,7 +169,7 @@ if query:
     block_breite = st.sidebar.slider(f"Zonen Breite ({cfg['unit']})", 1, 20, 5)
 
     with st.spinner('Lade Kursdaten...'):
-        aktie = yf.Ticker(query, session=yf_session)
+        aktie = yf.Ticker(query)
         df_full = aktie.history(period=cfg['buf'], interval=cfg['int'])
         df_crop = aktie.history(period=zeitraum, interval=cfg['int'])
 
@@ -316,8 +309,8 @@ if query:
                     p_sector = p_data.get("sector", "Unbekannt")
                     p_country = p_data.get("country", "Unbekannt")
                     
-                    # WICHTIG: Session übergeben!
-                    p_ticker_obj = yf.Ticker(p_ticker, session=yf_session)
+                    # Normale Initialisierung, OHNE custom session
+                    p_ticker_obj = yf.Ticker(p_ticker)
                     
                     # --- BESSERE ERKENNUNG VON ETFs vs. AKTIEN ---
                     try:
@@ -464,7 +457,7 @@ if query:
                     }
                     return result_dict, p_wert, expected_div_abs
 
-                # REDUZIERTE WORKER FÜR DIE CLOUD
+                # REDUZIERTE WORKER FÜR DIE CLOUD + KLEINE PAUSE
                 with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
                     futures = {executor.submit(process_portfolio_item, name, data): name for name, data in portfolio.items()}
                     
