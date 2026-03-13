@@ -10,7 +10,6 @@ import concurrent.futures
 import time
 
 # --- 1. CLOUD-SICHERE DATENABFRAGE (CACHING) ---
-# Das ist der wichtigste Teil gegen die Yahoo-Blockaden!
 
 @st.cache_data(ttl=3600)  # Suchergebnisse für 1 Stunde im Cache
 def finde_ticker_liste(suchbegriff):
@@ -97,6 +96,38 @@ def convert_df_to_csv(df):
 # --- 3. SETUP & SIDEBAR ---
 
 st.set_page_config(page_title="Aktienanalyse Pro", layout="wide")
+
+# --- CSS FIX FÜR BÜNDIGE TABELLEN ---
+st.markdown("""
+    <style>
+        /* Fixiert das Tabellenlayout, damit alle Spalten exakt untereinander stehen */
+        [data-testid="stTable"] table {
+            width: 100% !important;
+            table-layout: fixed !important;
+        }
+        /* Design für alle Zellen: mittig zentriert und etwas kompakter */
+        [data-testid="stTable"] th, [data-testid="stTable"] td {
+            text-align: center !important;
+            font-size: 0.85em !important;
+            padding: 8px 4px !important;
+            word-wrap: break-word;
+        }
+        /* Erste Spalte (Asset-Name) breiter machen und Text linksbündig */
+        [data-testid="stTable"] th:nth-child(1), [data-testid="stTable"] td:nth-child(1) {
+            width: 16% !important;
+            text-align: left !important;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        /* Empfehlung & Signal Spalten bekommen etwas mehr Platz */
+        [data-testid="stTable"] th:nth-child(10), [data-testid="stTable"] td:nth-child(10),
+        [data-testid="stTable"] th:nth-child(11), [data-testid="stTable"] td:nth-child(11) {
+            width: 10% !important;
+        }
+    </style>
+""", unsafe_allow_html=True)
+
 st.title("📈 Professionelles Analyse-Dashboard")
 
 portfolio = lade_portfolio()
@@ -412,9 +443,8 @@ if query:
                     except Exception as e:
                         pass
                     
-                    # Update Progress & Schutz vor Ban:
                     prog_bar.progress((idx + 1) / items_len)
-                    time.sleep(0.3) # Kurze Verschnaufpause für die API pro Ticker
+                    time.sleep(0.3)
                 
                 prog_bar.empty()
                 
@@ -465,13 +495,16 @@ if query:
                             
                         df_show = df_subset.drop(columns=cols_to_drop, errors='ignore')
                         
+                        # ACHTUNG: Hier wird der Index unsichtbar gemacht (.hide(axis="index"))
                         try:
-                            styled_df = df_show.style.map(style_signal, subset=['Signal']) \
+                            styled_df = df_show.style.hide(axis="index") \
+                                                     .map(style_signal, subset=['Signal']) \
                                                      .map(style_empf, subset=['Empfehlung']) \
                                                      .map(style_perf, subset=['1T %', '1M %', '3M %', '1J %']) \
                                                      .format(precision=2)
                         except AttributeError:
-                            styled_df = df_show.style.applymap(style_signal, subset=['Signal']) \
+                            styled_df = df_show.style.hide_index() \
+                                                     .applymap(style_signal, subset=['Signal']) \
                                                      .applymap(style_empf, subset=['Empfehlung']) \
                                                      .applymap(style_perf, subset=['1T %', '1M %', '3M %', '1J %']) \
                                                      .format(precision=2)
