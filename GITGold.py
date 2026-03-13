@@ -97,33 +97,27 @@ def convert_df_to_csv(df):
 
 st.set_page_config(page_title="Aktienanalyse Pro", layout="wide")
 
-# --- CSS FIX FÜR BÜNDIGE TABELLEN ---
+# --- KORRIGIERTER CSS FIX FÜR BÜNDIGE TABELLEN MIT ZEILENUMBRUCH ---
 st.markdown("""
     <style>
-        /* Fixiert das Tabellenlayout, damit alle Spalten exakt untereinander stehen */
         [data-testid="stTable"] table {
             width: 100% !important;
             table-layout: fixed !important;
         }
-        /* Design für alle Zellen: mittig zentriert und etwas kompakter */
         [data-testid="stTable"] th, [data-testid="stTable"] td {
             text-align: center !important;
             font-size: 0.85em !important;
             padding: 8px 4px !important;
-            word-wrap: break-word;
+            white-space: normal !important; /* Erlaubt Zeilenumbrüche */
+            word-wrap: break-word !important; /* Bricht zu lange Wörter um */
         }
-        /* Erste Spalte (Asset-Name) breiter machen und Text linksbündig */
         [data-testid="stTable"] th:nth-child(1), [data-testid="stTable"] td:nth-child(1) {
-            width: 16% !important;
+            width: 20% !important; /* Etwas mehr Platz für den Namen */
             text-align: left !important;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
         }
-        /* Empfehlung & Signal Spalten bekommen etwas mehr Platz */
         [data-testid="stTable"] th:nth-child(10), [data-testid="stTable"] td:nth-child(10),
         [data-testid="stTable"] th:nth-child(11), [data-testid="stTable"] td:nth-child(11) {
-            width: 10% !important;
+            width: 11% !important; 
         }
     </style>
 """, unsafe_allow_html=True)
@@ -495,7 +489,6 @@ if query:
                             
                         df_show = df_subset.drop(columns=cols_to_drop, errors='ignore')
                         
-                        # ACHTUNG: Hier wird der Index unsichtbar gemacht (.hide(axis="index"))
                         try:
                             styled_df = df_show.style.hide(axis="index") \
                                                      .map(style_signal, subset=['Signal']) \
